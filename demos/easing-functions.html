@@ -1,0 +1,173 @@
+<style>
+
+#container > div {
+  display: inline-block;
+  padding: 1em;
+}
+
+canvas {
+  width: 300px;
+  height: 300px;
+  border: 1px solid black;
+}
+
+</style>
+<div id="container"></div>
+<script src="../build/index.js"></script>
+<script>
+
+const WIDTH = 300;
+const HEIGHT = 300;
+const SAMPLES = 100;
+const MARGIN = 50;
+
+const container = document.getElementById('container');
+for (const [name, f] of Object.entries(EasingFunctions)) {
+  const functionContainer = document.createElement('div');
+  container.appendChild(functionContainer);
+
+  const label = document.createElement('div');
+  label.textContent = name;
+  functionContainer.appendChild(label);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = WIDTH;
+  canvas.height = HEIGHT;
+  functionContainer.appendChild(canvas);
+
+  // Sliders for extra parameters
+  let magnitudeSlider, periodSlider, bouncesSlider, decaySlider, magnitudeValue, periodValue, bouncesValue, decayValue;
+  let hasMagnitude = [
+    'ease-in-back', 'ease-out-back', 'ease-in-out-back',
+    'ease-in-elastic', 'ease-out-elastic', 'ease-in-out-elastic'
+  ].includes(name);
+  let hasPeriod = [
+    'ease-in-elastic', 'ease-out-elastic', 'ease-in-out-elastic'
+  ].includes(name);
+  let hasBounce = [
+    'ease-in-bounce', 'ease-out-bounce', 'ease-in-out-bounce'
+  ].includes(name);
+
+  let magnitude = 1.70158;
+  let period = name === 'ease-in-out-elastic' ? 0.45 : 0.3;
+  let bounces = 3;
+  let decay = 2.0;
+  if (hasMagnitude) {
+    const magnitudeInputContainer = document.createElement('div');
+    magnitudeInputContainer.style.marginTop = '0.5em';
+    magnitudeSlider = document.createElement('input');
+    magnitudeSlider.type = 'range';
+    magnitudeSlider.min = '0';
+    magnitudeSlider.max = '3';
+    magnitudeSlider.step = '0.01';
+    magnitudeSlider.value = String(magnitude);
+    magnitudeSlider.style.width = '150px';
+    magnitudeValue = document.createElement('span');
+    magnitudeValue.textContent = ` Magnitude: ${magnitude}`;
+    magnitudeInputContainer.appendChild(magnitudeSlider);
+    magnitudeInputContainer.appendChild(magnitudeValue);
+    functionContainer.appendChild(magnitudeInputContainer);
+  }
+  if (hasPeriod) {
+    const periodInputContainer = document.createElement('div');
+    periodInputContainer.style.marginTop = '0.5em';
+    periodSlider = document.createElement('input');
+    periodSlider.type = 'range';
+    periodSlider.min = '0.05';
+    periodSlider.max = '1';
+    periodSlider.step = '0.01';
+    periodSlider.value = String(period);
+    periodSlider.style.width = '150px';
+    periodValue = document.createElement('span');
+    periodValue.textContent = ` Period: ${period}`;
+    periodInputContainer.appendChild(periodSlider);
+    periodInputContainer.appendChild(periodValue);
+    functionContainer.appendChild(periodInputContainer);
+  }
+  if (hasBounce) {
+    const bouncesInputContainer = document.createElement('div');
+    bouncesInputContainer.style.marginTop = '0.5em';
+    bouncesSlider = document.createElement('input');
+    bouncesSlider.type = 'range';
+    bouncesSlider.min = '1';
+    bouncesSlider.max = '8';
+    bouncesSlider.step = '1';
+    bouncesSlider.value = String(bounces);
+    bouncesSlider.style.width = '150px';
+    bouncesValue = document.createElement('span');
+    bouncesValue.textContent = ` Bounces: ${bounces}`;
+    bouncesInputContainer.appendChild(bouncesSlider);
+    bouncesInputContainer.appendChild(bouncesValue);
+    functionContainer.appendChild(bouncesInputContainer);
+
+    const decayInputContainer = document.createElement('div');
+    decayInputContainer.style.marginTop = '0.5em';
+    decaySlider = document.createElement('input');
+    decaySlider.type = 'range';
+    decaySlider.min = '1';
+    decaySlider.max = '5';
+    decaySlider.step = '0.01';
+    decaySlider.value = String(decay);
+    decaySlider.style.width = '150px';
+    decayValue = document.createElement('span');
+    decayValue.textContent = ` Decay: ${decay}`;
+    decayInputContainer.appendChild(decaySlider);
+    decayInputContainer.appendChild(decayValue);
+    functionContainer.appendChild(decayInputContainer);
+  }
+
+  function draw() {
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, WIDTH, HEIGHT);
+    context.strokeStyle = 'gray';
+    context.strokeRect(MARGIN, MARGIN, WIDTH - 2 * MARGIN, HEIGHT - 2 * MARGIN);
+    context.strokeStyle = 'black';
+    context.beginPath();
+    context.moveTo(MARGIN, HEIGHT - MARGIN);
+    for (let i = 0; i <= SAMPLES; i++) {
+      const x = i / SAMPLES;
+      let y;
+      if (hasMagnitude && hasPeriod) {
+        y = f(x, parseFloat(magnitudeSlider.value), parseFloat(periodSlider.value));
+      } else if (hasMagnitude) {
+        y = f(x, parseFloat(magnitudeSlider.value));
+      } else if (hasBounce) {
+        y = f(x, parseInt(bouncesSlider.value), parseFloat(decaySlider.value));
+      } else {
+        y = f(x);
+      }
+      context.lineTo(
+        x * (WIDTH - 2 * MARGIN) + MARGIN,
+        (1 - y) * (HEIGHT - 2 * MARGIN) + MARGIN
+      );
+    }
+    context.stroke();
+  }
+
+  if (hasMagnitude) {
+    magnitudeSlider.addEventListener('input', () => {
+      magnitudeValue.textContent = ` Magnitude: ${parseFloat(magnitudeSlider.value).toFixed(2)}`;
+      draw();
+    });
+  }
+  if (hasPeriod) {
+    periodSlider.addEventListener('input', () => {
+      periodValue.textContent = ` Period: ${parseFloat(periodSlider.value).toFixed(2)}`;
+      draw();
+    });
+  }
+  if (hasBounce) {
+    bouncesSlider.addEventListener('input', () => {
+      bouncesValue.textContent = ` Bounces: ${bouncesSlider.value}`;
+      draw();
+    });
+    decaySlider.addEventListener('input', () => {
+      decayValue.textContent = ` Decay: ${parseFloat(decaySlider.value).toFixed(2)}`;
+      draw();
+    });
+  }
+
+  draw();
+}
+
+</script>

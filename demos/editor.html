@@ -1,0 +1,199 @@
+<style>
+
+canvas {
+  width: 800px;
+  height: 800px;
+  border: 1px solid black;
+  margin: 1em;
+}
+
+</style>
+<canvas></canvas>
+<br>
+<script src="../build/index.js"></script>
+<script src="dat.gui.min.js"></script>
+<script>
+
+// -----------------------------------------------------------------------------
+// Initial animation options
+// -----------------------------------------------------------------------------
+
+let animation;
+const ANIMATION_OPTIONS = {
+  initialValue: 100,
+  targetValue: 500,
+  mode: AnimationMode.Auto,
+  repeat: RepeatMode.Once,
+  repeats: 0,
+  duration: 3,
+  delay: 0,
+  clamp: false,
+  round: false,
+  easeAmount: 0,
+  stops: [],
+  interpolationFunction: 'linear',
+  interpolationFunctionParameters: [],
+};
+
+// -----------------------------------------------------------------------------
+// Setup canvas
+// -----------------------------------------------------------------------------
+
+const canvas = document.querySelector('canvas');
+const context = canvas.getContext('2d');
+
+canvas.width = 800;
+canvas.height = 800;
+
+// -----------------------------------------------------------------------------
+// Setup GUI
+// -----------------------------------------------------------------------------
+
+const gui = new dat.GUI();
+
+// Store references to controllers for updating
+const controllers = [];
+
+controllers.push(gui.add({
+  import: () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          Object.assign(ANIMATION_OPTIONS, data);
+          updateStopsFolder();
+          initialise();
+          // Update all controllers
+          controllers.forEach(ctrl => ctrl.updateDisplay());
+        } catch (err) {
+          alert('Invalid JSON file.');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+}, 'import'));
+
+controllers.push(gui.add({
+  export: () => {
+    const dataStr = JSON.stringify(ANIMATION_OPTIONS, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'animation-options.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
+}, 'export'));
+
+controllers.push(gui.add({ start: () => animation.start() }, 'start'));
+controllers.push(gui.add({ stop: () => animation.stop() }, 'stop'));
+controllers.push(gui.add({ reset: () => animation.reset() }, 'reset'));
+
+let holding = false;
+const holdController = gui.add({ hold: () => {} }, 'hold');
+controllers.push(holdController);
+setTimeout(() => {
+  const domElement = holdController.domElement;
+  if (domElement) {
+    domElement.parentElement.parentElement.addEventListener('mousedown', () => {
+      console.log('holding');
+      holding = true;
+    });
+    domElement.parentElement.parentElement.addEventListener('mouseup', () => {
+      console.log('stopped holding');
+      holding = false;
+    });
+  }
+}, 0);
+controllers.push(gui.add(ANIMATION_OPTIONS, 'mode', AnimationMode).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'repeat', RepeatMode).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'repeats', 0, 10, 1).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'duration', 0.1, 10, 0.1).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'delay', 0, 5, 0.1).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'clamp').onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'round').onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'easeAmount', 0, 1, 0.1).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'initialValue', 0, 1000, 1).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'targetValue', 0, 1000, 1).onChange(() => initialise()));
+controllers.push(gui.add(ANIMATION_OPTIONS, 'interpolationFunction', Object.keys(EasingFunctions)).onChange(() => initialise()));
+
+let stopsFolder;
+
+function updateStopsFolder() {
+  // Remove old folder if it exists
+  if (stopsFolder) {
+    gui.removeFolder(stopsFolder);
+  }
+  stopsFolder = gui.addFolder('stops');
+
+  // Add each stop as a subfolder
+  ANIMATION_OPTIONS.stops.forEach((stop, i) => {
+    const stopFolder = stopsFolder.addFolder('Stop ' + (i + 1));
+    stopFolder.add(stop, 'progress', 0, 1, 0.01).onChange(() => initialise());
+    stopFolder.add(stop, 'value', 0, 1000, 1).onChange(() => initialise());
+    stopFolder.add({
+      delete: () => {
+        ANIMATION_OPTIONS.stops.splice(i, 1);
+        updateStopsFolder();
+        initialise();
+      }
+    }, 'delete');
+  });
+
+  // Add button to add new stop
+  stopsFolder.add({
+    add: () => {
+      ANIMATION_OPTIONS.stops.push({ progress: 0.5, value: 500 });
+      updateStopsFolder();
+      initialise();
+    }
+  }, 'add');
+
+  stopsFolder.open();
+}
+updateStopsFolder();
+
+// -----------------------------------------------------------------------------
+// Animation loop
+// -----------------------------------------------------------------------------
+
+function initialise() {
+  animation = new Animation(ANIMATION_OPTIONS);
+}
+initialise();
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+
+function update() {
+  if (ANIMATION_OPTIONS.mode === AnimationMode.Hold) {
+    animation.holding = holding;
+  }
+  animation.update(1 / 60);
+}
+
+function draw() {
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  context.fillStyle = 'red';
+  context.fillRect(animation.current, 100, 200, 200);
+}
+
+</script>

@@ -1,0 +1,100 @@
+<style>
+
+canvas {
+  width: 800px;
+  height: 800px;
+  border: 1px solid black;
+  margin: 1em;
+}
+
+</style>
+<canvas></canvas>
+<br>
+<script src="../build/index.js"></script>
+<script>
+
+// -----------------------------------------------------------------------------
+// Initial animation options
+// -----------------------------------------------------------------------------
+
+const multiAnimation = new MultiAnimation({
+  _default: {
+    mode: AnimationMode.Auto,
+    repeat: RepeatMode.PingPong,
+    duration: 2,
+    interpolationFunction: 'ease-in-out-cubic',
+  },
+  scale: {
+    initialValue: 1,
+    targetValue: 2,
+    duration: 1,
+  },
+  rotation: {
+    initialValue: 0,
+    targetValue: Math.PI * 2,
+    repeat: RepeatMode.Loop,
+    duration: 3,
+  },
+  position: {
+    initialValue: {
+      x: 100,
+      y: 100
+    },
+    repeat: RepeatMode.Loop,
+    stops: [
+      { progress: 0.25, value: { x: 600, y: 100 } },
+      { progress: 0.5, value: { x: 600, y: 600 } },
+      { progress: 0.75, value: { x: 100, y: 600 } },
+      { progress: 1, value: { x: 100, y: 100 } },
+    ],
+  },
+  color: {
+    initialValue: { r: 255, g: 0, b: 0 },
+    targetValue: { r: 0, g: 128, b: 255 },
+    duration: 4,
+    round: true,
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Setup canvas
+// -----------------------------------------------------------------------------
+
+const canvas = document.querySelector('canvas');
+const context = canvas.getContext('2d');
+
+canvas.width = 800;
+canvas.height = 800;
+
+// -----------------------------------------------------------------------------
+// Animation loop
+// -----------------------------------------------------------------------------
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+
+function update() {
+  multiAnimation.update(1 / 60);
+}
+
+function draw() {
+  context.clearRect(0, 0, canvas.width, canvas.height);
+
+  context.save();
+  context.translate(multiAnimation.current.position.x, multiAnimation.current.position.y);
+  context.scale(multiAnimation.current.scale, multiAnimation.current.scale);
+  context.rotate(multiAnimation.current.rotation);
+  context.fillStyle = colorToString(multiAnimation.current.color);
+  context.fillRect(0, 0, 200, 200);
+  context.restore();
+}
+
+function colorToString(color) {
+  return `rgb(${color.r}, ${color.g}, ${color.b})`;
+}
+
+</script>
