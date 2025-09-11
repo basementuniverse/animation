@@ -214,6 +214,28 @@ export type AnimationOptions<T extends AnimatableValue> = {
    * Optional parameters to pass to the interpolation function
    */
   interpolationFunctionParameters?: any[];
+
+  /**
+   * Optional callback when the animation reaches the end
+   *
+   * This will be called every time the animation progress reaches 1
+   */
+  onFinished?: () => void;
+
+  /**
+   * Optional callback each time the animation repeats (only for Loop and
+   * PingPong repeat modes)
+   *
+   * The callback receives the current repeat count (starting from 1)
+   */
+  onRepeat?: (count: number) => void;
+
+  /**
+   * Optional callback each time the animation reaches a stop/keyframe
+   *
+   * The callback receives the index of the stop reached (starting from 0)
+   */
+  onStopReached?: (index: number) => void;
 };
 
 // -----------------------------------------------------------------------------
@@ -238,13 +260,14 @@ export class Animation<T extends AnimatableValue = number> {
   private actualValue: T;
   private options: AnimationOptions<T>;
   private interpolationFunction?: InterpolationFunction<T>;
-  private direction: number = 1; // 1 = forward, -1 = backward
-  private repeatCount: number = 0; // Number of completed repeats
-  private finished: boolean = false;
+  private hasCalledFinishedCallback: boolean = false;
 
   public progress: number = 0;
   public running: boolean = false;
   public holding: boolean = false;
+  public direction: number = 1; // 1 = forward, -1 = backward
+  public repeatCount: number = 0; // Number of completed repeats
+  public finished: boolean = false;
 
   public constructor(options: AnimationOptions<T>) {
     this.options = {
@@ -341,6 +364,7 @@ export class Animation<T extends AnimatableValue = number> {
     this.repeatCount = 0;
     this.direction = 1;
     this.finished = false;
+    this.hasCalledFinishedCallback = false;
 
     if (this.options.mode === AnimationMode.Auto) {
       this.start();
@@ -415,6 +439,7 @@ export class Animation<T extends AnimatableValue = number> {
     } else if (repeat === RepeatMode.Loop) {
       if (this.direction === 1 && newProgress >= 1) {
         this.repeatCount++;
+        this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 1;
           completed = true;
@@ -423,6 +448,7 @@ export class Animation<T extends AnimatableValue = number> {
         }
       } else if (this.direction === -1 && newProgress <= 0) {
         this.repeatCount++;
+        this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 0;
           completed = true;
@@ -434,6 +460,7 @@ export class Animation<T extends AnimatableValue = number> {
       if (this.direction === 1 && newProgress >= 1) {
         this.direction = -1;
         this.repeatCount++;
+        this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 1;
           completed = true;
@@ -443,6 +470,7 @@ export class Animation<T extends AnimatableValue = number> {
       } else if (this.direction === -1 && newProgress <= 0) {
         this.direction = 1;
         this.repeatCount++;
+        this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 0;
           completed = true;
@@ -457,6 +485,11 @@ export class Animation<T extends AnimatableValue = number> {
       newProgress = clamp(newProgress, 0, 1);
     }
 
+    // Track if we moved away from progress=1 to reset the finished callback flag
+    if (this.progress !== 1 && this.hasCalledFinishedCallback) {
+      this.hasCalledFinishedCallback = false;
+    }
+
     this.progress = newProgress;
 
     // Compute value (handle stops/keyframes)
@@ -466,12 +499,36 @@ export class Animation<T extends AnimatableValue = number> {
       // Find the two stops surrounding progress
       let prev = { progress: 0, value: this.options.initialValue };
       let next = { progress: 1, value: this.options.targetValue };
+      let reachedStopIndex = -1;
+
       for (let i = 0; i < stops.length; i++) {
-        if (stops[i].progress <= this.progress) prev = stops[i];
+        if (stops[i].progress <= this.progress) {
+          prev = stops[i];
+          if (Math.abs(stops[i].progress - this.progress) < 1e-6) {
+            reachedStopIndex = i;
+          }
+        }
         if (stops[i].progress >= this.progress) {
           next = stops[i];
+          if (Math.abs(stops[i].progress - this.progress) < 1e-6) {
+            reachedStopIndex = i;
+          }
           break;
         }
+      }
+
+      // Check for stops at exact progress values (0 and 1)
+      if (Math.abs(this.progress - 0) < 1e-6) {
+        const zeroStop = stops.find(s => Math.abs(s.progress - 0) < 1e-6);
+        if (zeroStop) reachedStopIndex = stops.indexOf(zeroStop);
+      } else if (Math.abs(this.progress - 1) < 1e-6) {
+        const oneStop = stops.find(s => Math.abs(s.progress - 1) < 1e-6);
+        if (oneStop) reachedStopIndex = stops.indexOf(oneStop);
+      }
+
+      // Call onStopReached callback if we hit a stop
+      if (reachedStopIndex >= 0) {
+        this.options.onStopReached?.(reachedStopIndex);
       }
 
       // If progress is before first stop
@@ -553,6 +610,10 @@ export class Animation<T extends AnimatableValue = number> {
     if (completed) {
       this.running = false;
       this.finished = true;
+      if (!this.hasCalledFinishedCallback) {
+        this.options.onFinished?.();
+        this.hasCalledFinishedCallback = true;
+      }
     }
   }
 }

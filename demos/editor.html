@@ -33,6 +33,15 @@ const ANIMATION_OPTIONS = {
   stops: [],
   interpolationFunction: 'linear',
   interpolationFunctionParameters: [],
+  onFinished: () => {
+    console.log('Animation finished');
+  },
+  onRepeat: (count) => {
+    console.log('Animation repeated', count);
+  },
+  onStopReached: (index) => {
+    console.log('Animation reached keyframe/stop', index);
+  },
 };
 
 // -----------------------------------------------------------------------------

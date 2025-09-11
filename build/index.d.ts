@@ -136,6 +136,25 @@ export type AnimationOptions<T extends AnimatableValue> = {
      * Optional parameters to pass to the interpolation function
      */
     interpolationFunctionParameters?: any[];
+    /**
+     * Optional callback when the animation reaches the end
+     *
+     * This will be called every time the animation progress reaches 1
+     */
+    onFinished?: () => void;
+    /**
+     * Optional callback each time the animation repeats (only for Loop and
+     * PingPong repeat modes)
+     *
+     * The callback receives the current repeat count (starting from 1)
+     */
+    onRepeat?: (count: number) => void;
+    /**
+     * Optional callback each time the animation reaches a stop/keyframe
+     *
+     * The callback receives the index of the stop reached (starting from 0)
+     */
+    onStopReached?: (index: number) => void;
 };
 export declare class Animation<T extends AnimatableValue = number> {
     private static readonly DEFAULT_OPTIONS;
@@ -143,12 +162,13 @@ export declare class Animation<T extends AnimatableValue = number> {
     private actualValue;
     private options;
     private interpolationFunction?;
-    private direction;
-    private repeatCount;
-    private finished;
+    private hasCalledFinishedCallback;
     progress: number;
     running: boolean;
     holding: boolean;
+    direction: number;
+    repeatCount: number;
+    finished: boolean;
     constructor(options: AnimationOptions<T>);
     private getInterpolationFunction;
     get current(): T;

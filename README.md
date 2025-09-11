@@ -89,6 +89,15 @@ type Color = {
 };
 ```
 
+Public properties:
+
+- `progress`: Current normalised progress of the animation (0 to 1)
+- `running`: Whether the animation is currently running
+- `holding`: Whether the animation is currently being held (for `Hold` mode)
+- `direction`: Direction of the animation (1 = forward, -1 = backward)
+- `repeatCount`: Number of completed repeats
+- `finished`: Whether the animation has finished (for `Once` repeat mode)
+
 ### `MultiAnimation`
 
 ```js
@@ -268,6 +277,28 @@ export type AnimationOptions<T extends AnimatableValue> = {
    * Optional parameters to pass to the interpolation function
    */
   interpolationFunctionParameters?: any[];
+
+  /**
+   * Optional callback when the animation reaches the end
+   *
+   * This will be called every time the animation progress reaches 1
+   */
+  onFinished?: () => void;
+
+  /**
+   * Optional callback each time the animation repeats (only for Loop and
+   * PingPong repeat modes)
+   *
+   * The callback receives the current repeat count (starting from 1)
+   */
+  onRepeat?: (count: number) => void;
+
+  /**
+   * Optional callback each time the animation reaches a stop/keyframe
+   *
+   * The callback receives the index of the stop reached (starting from 0)
+   */
+  onStopReached?: (index: number) => void;
 };
 ```
 
