@@ -244,14 +244,14 @@ export type AnimationOptions<T extends AnimatableValue> = {
 
 export class Animation<T extends AnimatableValue = number> {
   private static readonly DEFAULT_OPTIONS: Partial<AnimationOptions<any>> = {
-    initialValue: 0,
-    targetValue: 1,
+    mode: AnimationMode.Auto,
+    repeat: RepeatMode.Once,
+    repeats: 0,
     duration: 1,
     delay: 0,
     clamp: true,
     round: false,
     easeAmount: 0,
-    stops: undefined,
     interpolationFunction: 'linear',
     interpolationFunctionParameters: [],
   };
@@ -269,7 +269,12 @@ export class Animation<T extends AnimatableValue = number> {
   public repeatCount: number = 0; // Number of completed repeats
   public finished: boolean = false;
 
-  public constructor(options: AnimationOptions<T>) {
+  public constructor(
+    options: {
+      initialValue: T;
+      targetValue: T;
+    } & Partial<AnimationOptions<T>>
+  ) {
     this.options = {
       ...Animation.DEFAULT_OPTIONS,
       ...options,

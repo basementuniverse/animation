@@ -169,7 +169,10 @@ export declare class Animation<T extends AnimatableValue = number> {
     direction: number;
     repeatCount: number;
     finished: boolean;
-    constructor(options: AnimationOptions<T>);
+    constructor(options: {
+        initialValue: T;
+        targetValue: T;
+    } & Partial<AnimationOptions<T>>);
     private getInterpolationFunction;
     get current(): T;
     start(): void;
