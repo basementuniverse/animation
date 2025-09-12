@@ -633,7 +633,10 @@ export class MultiAnimation<T extends { [K in keyof T]: AnimatableValue }> {
 
   public constructor(
     options: { _default?: Partial<AnimationOptions<any>> } & {
-      [K in keyof T]?: AnimationOptions<T[K]>;
+      [K in keyof T]?: {
+        initialValue: T[K];
+        targetValue: T[K];
+      } & Partial<AnimationOptions<T[K]>>;
     }
   ) {
     const { _default, ...rest } = options;

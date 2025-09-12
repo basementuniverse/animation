@@ -188,7 +188,10 @@ export declare class MultiAnimation<T extends {
     constructor(options: {
         _default?: Partial<AnimationOptions<any>>;
     } & {
-        [K in keyof T]?: AnimationOptions<T[K]>;
+        [K in keyof T]?: {
+            initialValue: T[K];
+            targetValue: T[K];
+        } & Partial<AnimationOptions<T[K]>>;
     });
     private updateCurrent;
     get current(): T;
