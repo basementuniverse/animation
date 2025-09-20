@@ -631,6 +631,20 @@ export class MultiAnimation<T extends { [K in keyof T]: AnimatableValue }> {
   private animations: Partial<{ [K in keyof T]: Animation<T[K]> }> = {};
   private _current: Partial<T> = {};
 
+  public get holding(): boolean {
+    return Object.values(this.animations).some(
+      animation => (animation as Animation<any>)?.holding
+    );
+  }
+
+  public set holding(value: boolean) {
+    for (const key in this.animations) {
+      if (this.animations[key as keyof T]) {
+        this.animations[key as keyof T]!.holding = value;
+      }
+    }
+  }
+
   public constructor(
     options: { _default?: Partial<AnimationOptions<any>> } & {
       [K in keyof T]?: {

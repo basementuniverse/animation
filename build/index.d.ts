@@ -185,6 +185,8 @@ export declare class MultiAnimation<T extends {
 }> {
     private animations;
     private _current;
+    get holding(): boolean;
+    set holding(value: boolean);
     constructor(options: {
         _default?: Partial<AnimationOptions<any>>;
     } & {
