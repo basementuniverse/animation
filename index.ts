@@ -378,7 +378,7 @@ export class Animation<T extends AnimatableValue = number> {
 
   public update(dt: number): void {
     if (
-      this.options.mode !== AnimationMode.Hold &&
+      ![AnimationMode.Hold, AnimationMode.Manual].includes(this.options.mode) &&
       (!this.running || this.finished)
     ) {
       return;
@@ -643,6 +643,15 @@ export class MultiAnimation<T extends { [K in keyof T]: AnimatableValue }> {
         this.animations[key as keyof T]!.holding = value;
       }
     }
+  }
+
+  public set progress(value: number) {
+    for (const key in this.animations) {
+      if (this.animations[key as keyof T]) {
+        this.animations[key as keyof T]!.progress = value;
+      }
+    }
+    this.updateCurrent();
   }
 
   public constructor(

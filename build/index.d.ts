@@ -187,6 +187,7 @@ export declare class MultiAnimation<T extends {
     private _current;
     get holding(): boolean;
     set holding(value: boolean);
+    set progress(value: number);
     constructor(options: {
         _default?: Partial<AnimationOptions<any>>;
     } & {
