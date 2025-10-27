@@ -1,6 +1,6 @@
 {
   "name": "@basementuniverse/animation",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "A component for animating values in browser games",
   "author": "Gordon Larrigan <gordonlarrigan@gmail.com> (https://gordonlarrigan.com)",
   "license": "MIT",
