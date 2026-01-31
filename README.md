@@ -124,6 +124,72 @@ const multiAnimation = new MultiAnimation({
 });
 ```
 
+### Spline Interpolation
+
+The library includes built-in support for animating along Bezier and Catmull-Rom splines:
+
+```js
+import { bezierPath, catmullRomPath } from '@basementuniverse/animation';
+
+// Cubic Bezier path with control points in normalized space
+const bezierAnimation = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 100, y: 100 },
+  duration: 2,
+  interpolationFunction: bezierPath({
+    points: [
+      { x: 0.25, y: 0.8 },  // Control point 1
+      { x: 0.75, y: 0.2 }   // Control point 2
+    ],
+    order: 3,              // Cubic Bezier (1=linear, 2=quadratic, 3=cubic)
+    relative: 'start-end', // Points in normalized 0-1 space
+    useAnimationEndpoints: true  // Use initialValue/targetValue as endpoints
+  })
+});
+
+// Catmull-Rom spline through multiple waypoints
+const splineAnimation = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 300, y: 300 },
+  duration: 3,
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 50, y: 200 },   // Waypoint 1
+      { x: 150, y: 50 },   // Waypoint 2
+      { x: 250, y: 250 }   // Waypoint 3
+    ],
+    tension: 0.5,          // Controls curve tightness (0-1)
+    relative: 'none'       // Absolute coordinates
+  })
+});
+```
+
+#### Relative positioning modes
+
+Both `bezierPath` and `catmullRomPath` support three positioning modes:
+
+- `'none'`: Points are absolute coordinates
+- `'start'`: Points are offsets from `initialValue`
+- `'start-end'`: Points are in normalized 0-1 space, scaled between `initialValue` and `targetValue`
+
+```js
+// Example: Start-relative positioning
+const animation = new Animation({
+  initialValue: { x: 100, y: 100 },
+  targetValue: { x: 400, y: 400 },
+  interpolationFunction: bezierPath({
+    points: [
+      { x: 50, y: -50 },   // 50 units right, 50 units up from start
+      { x: 250, y: 150 }   // 250 units right, 150 units down from start
+    ],
+    order: 3,
+    relative: 'start'
+  })
+});
+```
+
+See `./demos/spline-animation.html` for interactive examples.
+
 ## Animation options
 
 ```ts

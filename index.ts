@@ -745,10 +745,10 @@ export const EasingFunctions: Record<string, EasingFunction> = {
     t === 0
       ? 0
       : t === 1
-      ? 1
-      : t < 0.5
-      ? Math.pow(2, 20 * t - 10) / 2
-      : (2 - Math.pow(2, -20 * t + 10)) / 2,
+        ? 1
+        : t < 0.5
+          ? Math.pow(2, 20 * t - 10) / 2
+          : (2 - Math.pow(2, -20 * t + 10)) / 2,
   'ease-in-circ': t => 1 - Math.sqrt(1 - t * t),
   'ease-out-circ': t => Math.sqrt(1 - --t * t),
   'ease-in-out-circ': t =>
@@ -841,4 +841,444 @@ export const EasingFunctions: Record<string, EasingFunction> = {
 function bounceOut(t: number, bounces: number = 4, decay: number = 2): number {
   const pow = Math.pow(1 - t, decay);
   return 1 - Math.abs(Math.cos(t * Math.PI * bounces)) * pow;
+}
+
+// -----------------------------------------------------------------------------
+// Spline interpolation
+// -----------------------------------------------------------------------------
+
+export type BezierPathOptions<T extends vec2 | vec3 = vec2> = {
+  /**
+   * Control points for the Bezier curve (excludes start/end if useAnimationEndpoints is true)
+   */
+  points: T[];
+
+  /**
+   * The order of the Bezier curve (1 = linear, 2 = quadratic, 3 = cubic)
+   */
+  order: 1 | 2 | 3;
+
+  /**
+   * Whether points are relative to start, or absolute
+   *
+   * - 'none': Points are absolute coordinates
+   * - 'start': Points are offsets from initialValue
+   * - 'start-end': Points are in normalized 0-1 space, scaled between initialValue and targetValue
+   *
+   * Default is 'none'
+   */
+  relative?: 'none' | 'start' | 'start-end';
+
+  /**
+   * If true, use initialValue/targetValue as the first/last control points
+   * If false, points array should include all control points
+   *
+   * Default is true
+   */
+  useAnimationEndpoints?: boolean;
+};
+
+export type CatmullRomPathOptions<T extends vec2 | vec3 = vec2> = {
+  /**
+   * Control points for the Catmull-Rom spline
+   */
+  points: T[];
+
+  /**
+   * Tension parameter for the Catmull-Rom spline (0 = no tension, 0.5 = default, 1 = tight)
+   *
+   * Default is 0.5
+   */
+  tension?: number;
+
+  /**
+   * Whether points are relative to start, or absolute
+   *
+   * - 'none': Points are absolute coordinates
+   * - 'start': Points are offsets from initialValue
+   * - 'start-end': Points are in normalized 0-1 space, scaled between initialValue and targetValue
+   *
+   * Default is 'none'
+   */
+  relative?: 'none' | 'start' | 'start-end';
+
+  /**
+   * If true, use initialValue/targetValue as endpoints in the spline
+   * If false, points array should include all control points
+   *
+   * Default is true
+   */
+  useAnimationEndpoints?: boolean;
+};
+
+/**
+ * Helper function to transform points based on relative mode
+ */
+function transformPoints<T extends vec2 | vec3>(
+  points: T[],
+  start: T,
+  end: T,
+  relative: 'none' | 'start' | 'start-end'
+): T[] {
+  if (relative === 'none') {
+    return points;
+  }
+
+  if (relative === 'start') {
+    // Points are offsets from start
+    const isVec2Type = isVec2(start);
+    return points.map(p => {
+      if (isVec2Type && isVec2(p)) {
+        return { x: start.x + p.x, y: start.y + p.y } as T;
+      } else if (isVec3(p) && isVec3(start)) {
+        return { x: start.x + p.x, y: start.y + p.y, z: start.z + p.z } as T;
+      }
+      return p;
+    });
+  }
+
+  if (relative === 'start-end') {
+    // Points are in normalized 0-1 space, scaled between start and end
+    const isVec2Type = isVec2(start);
+    return points.map(p => {
+      if (isVec2Type && isVec2(p) && isVec2(end)) {
+        return {
+          x: start.x + p.x * (end.x - start.x),
+          y: start.y + p.y * (end.y - start.y),
+        } as T;
+      } else if (isVec3(p) && isVec3(start) && isVec3(end)) {
+        return {
+          x: start.x + p.x * (end.x - start.x),
+          y: start.y + p.y * (end.y - start.y),
+          z: start.z + p.z * (end.z - start.z),
+        } as T;
+      }
+      return p;
+    });
+  }
+
+  return points;
+}
+
+/**
+ * Evaluate a Bezier curve at parameter t
+ */
+function evaluateBezier<T extends vec2 | vec3>(
+  controlPoints: T[],
+  t: number,
+  order: 1 | 2 | 3
+): T {
+  if (controlPoints.length !== order + 1) {
+    throw new Error(
+      `Bezier curve of order ${order} requires ${order + 1} control points, but ${controlPoints.length} were provided`
+    );
+  }
+
+  const isVec2Type = isVec2(controlPoints[0]);
+
+  if (order === 1) {
+    // Linear Bezier
+    const p0 = controlPoints[0];
+    const p1 = controlPoints[1];
+    if (isVec2Type && isVec2(p0) && isVec2(p1)) {
+      return {
+        x: (1 - t) * p0.x + t * p1.x,
+        y: (1 - t) * p0.y + t * p1.y,
+      } as T;
+    } else if (isVec3(p0) && isVec3(p1)) {
+      return {
+        x: (1 - t) * p0.x + t * p1.x,
+        y: (1 - t) * p0.y + t * p1.y,
+        z: (1 - t) * p0.z + t * p1.z,
+      } as T;
+    }
+  }
+
+  if (order === 2) {
+    // Quadratic Bezier
+    const p0 = controlPoints[0];
+    const p1 = controlPoints[1];
+    const p2 = controlPoints[2];
+    const t2 = t * t;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+
+    if (isVec2Type && isVec2(p0) && isVec2(p1) && isVec2(p2)) {
+      return {
+        x: mt2 * p0.x + 2 * mt * t * p1.x + t2 * p2.x,
+        y: mt2 * p0.y + 2 * mt * t * p1.y + t2 * p2.y,
+      } as T;
+    } else if (isVec3(p0) && isVec3(p1) && isVec3(p2)) {
+      return {
+        x: mt2 * p0.x + 2 * mt * t * p1.x + t2 * p2.x,
+        y: mt2 * p0.y + 2 * mt * t * p1.y + t2 * p2.y,
+        z: mt2 * p0.z + 2 * mt * t * p1.z + t2 * p2.z,
+      } as T;
+    }
+  }
+
+  if (order === 3) {
+    // Cubic Bezier
+    const p0 = controlPoints[0];
+    const p1 = controlPoints[1];
+    const p2 = controlPoints[2];
+    const p3 = controlPoints[3];
+    const t2 = t * t;
+    const t3 = t2 * t;
+    const mt = 1 - t;
+    const mt2 = mt * mt;
+    const mt3 = mt2 * mt;
+
+    if (isVec2Type && isVec2(p0) && isVec2(p1) && isVec2(p2) && isVec2(p3)) {
+      return {
+        x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p2.x + t3 * p3.x,
+        y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p2.y + t3 * p3.y,
+      } as T;
+    } else if (isVec3(p0) && isVec3(p1) && isVec3(p2) && isVec3(p3)) {
+      return {
+        x: mt3 * p0.x + 3 * mt2 * t * p1.x + 3 * mt * t2 * p2.x + t3 * p3.x,
+        y: mt3 * p0.y + 3 * mt2 * t * p1.y + 3 * mt * t2 * p2.y + t3 * p3.y,
+        z: mt3 * p0.z + 3 * mt2 * t * p1.z + 3 * mt * t2 * p2.z + t3 * p3.z,
+      } as T;
+    }
+  }
+
+  throw new Error('Unsupported Bezier order or vector type');
+}
+
+/**
+ * Evaluate Catmull-Rom basis functions
+ */
+function catmullRomBasis(
+  t: number,
+  tension: number
+): [number, number, number, number] {
+  const t2 = t * t;
+  const t3 = t2 * t;
+
+  return [
+    -tension * t3 + 2 * tension * t2 - tension * t,
+    (2 - tension) * t3 + (tension - 3) * t2 + 1,
+    (tension - 2) * t3 + (3 - 2 * tension) * t2 + tension * t,
+    tension * t3 - tension * t2,
+  ];
+}
+
+/**
+ * Evaluate a Catmull-Rom spline segment at parameter t
+ */
+function evaluateCatmullRomSegment<T extends vec2 | vec3>(
+  p0: T,
+  p1: T,
+  p2: T,
+  p3: T,
+  t: number,
+  tension: number
+): T {
+  const basis = catmullRomBasis(t, tension);
+  const isVec2Type = isVec2(p0);
+
+  if (isVec2Type && isVec2(p0) && isVec2(p1) && isVec2(p2) && isVec2(p3)) {
+    return {
+      x: basis[0] * p0.x + basis[1] * p1.x + basis[2] * p2.x + basis[3] * p3.x,
+      y: basis[0] * p0.y + basis[1] * p1.y + basis[2] * p2.y + basis[3] * p3.y,
+    } as T;
+  } else if (isVec3(p0) && isVec3(p1) && isVec3(p2) && isVec3(p3)) {
+    return {
+      x: basis[0] * p0.x + basis[1] * p1.x + basis[2] * p2.x + basis[3] * p3.x,
+      y: basis[0] * p0.y + basis[1] * p1.y + basis[2] * p2.y + basis[3] * p3.y,
+      z: basis[0] * p0.z + basis[1] * p1.z + basis[2] * p2.z + basis[3] * p3.z,
+    } as T;
+  }
+
+  throw new Error('Unsupported vector type for Catmull-Rom spline');
+}
+
+/**
+ * Create a Bezier path interpolation function
+ *
+ * @param options Bezier path options
+ * @returns An interpolation function that evaluates the Bezier curve
+ *
+ * @example
+ * ```typescript
+ * const animation = new Animation({
+ *   initialValue: { x: 0, y: 0 },
+ *   targetValue: { x: 100, y: 100 },
+ *   duration: 2,
+ *   interpolationFunction: bezierPath({
+ *     points: [
+ *       { x: 0.25, y: 0.8 },
+ *       { x: 0.75, y: 0.2 }
+ *     ],
+ *     order: 3,
+ *     relative: 'start-end'
+ *   })
+ * });
+ * ```
+ */
+export function bezierPath<T extends vec2 | vec3>(
+  options: BezierPathOptions<T>
+): InterpolationFunction<T> {
+  const {
+    points,
+    order,
+    relative = 'none',
+    useAnimationEndpoints = true,
+  } = options;
+
+  return (a: T, b: T, t: number): T => {
+    // Throw error if trying to use with scalar values
+    if (isNumber(a) || isNumber(b)) {
+      throw new Error(
+        'bezierPath interpolation function cannot be used with scalar number values. Use vec2 or vec3 instead.'
+      );
+    }
+
+    // Transform points based on relative mode
+    const transformedPoints = transformPoints(points, a, b, relative);
+
+    // Build control points array
+    let controlPoints: T[];
+    if (useAnimationEndpoints) {
+      // Use animation start/end as first/last control points
+      controlPoints = [a, ...transformedPoints, b];
+    } else {
+      // Use all points from the array
+      controlPoints = transformedPoints;
+    }
+
+    // Evaluate Bezier curve
+    return evaluateBezier(controlPoints, t, order);
+  };
+}
+
+/**
+ * Create a Catmull-Rom spline interpolation function
+ *
+ * @param options Catmull-Rom spline options
+ * @returns An interpolation function that evaluates the Catmull-Rom spline
+ *
+ * @example
+ * ```typescript
+ * const animation = new Animation({
+ *   initialValue: { x: 0, y: 0 },
+ *   targetValue: { x: 100, y: 100 },
+ *   duration: 2,
+ *   interpolationFunction: catmullRomPath({
+ *     points: [
+ *       { x: 25, y: 80 },
+ *       { x: 75, y: 20 }
+ *     ],
+ *     tension: 0.5,
+ *     relative: 'none'
+ *   })
+ * });
+ * ```
+ */
+export function catmullRomPath<T extends vec2 | vec3>(
+  options: CatmullRomPathOptions<T>
+): InterpolationFunction<T> {
+  const {
+    points,
+    tension = 0.5,
+    relative = 'none',
+    useAnimationEndpoints = true,
+  } = options;
+
+  return (a: T, b: T, t: number): T => {
+    // Throw error if trying to use with scalar values
+    if (isNumber(a) || isNumber(b)) {
+      throw new Error(
+        'catmullRomPath interpolation function cannot be used with scalar number values. Use vec2 or vec3 instead.'
+      );
+    }
+
+    // Transform points based on relative mode
+    const transformedPoints = transformPoints(points, a, b, relative);
+
+    // Build control points array
+    let allPoints: T[];
+    if (useAnimationEndpoints) {
+      allPoints = [a, ...transformedPoints, b];
+    } else {
+      allPoints = transformedPoints;
+    }
+
+    // Need at least 2 points for a Catmull-Rom spline
+    if (allPoints.length < 2) {
+      throw new Error('Catmull-Rom spline requires at least 2 control points');
+    }
+
+    // For a single segment (2 points), just do linear interpolation
+    if (allPoints.length === 2) {
+      const p0 = allPoints[0];
+      const p1 = allPoints[1];
+      const isVec2Type = isVec2(p0);
+
+      if (isVec2Type && isVec2(p0) && isVec2(p1)) {
+        return {
+          x: p0.x + (p1.x - p0.x) * t,
+          y: p0.y + (p1.y - p0.y) * t,
+        } as T;
+      } else if (isVec3(p0) && isVec3(p1)) {
+        return {
+          x: p0.x + (p1.x - p0.x) * t,
+          y: p0.y + (p1.y - p0.y) * t,
+          z: p0.z + (p1.z - p0.z) * t,
+        } as T;
+      }
+    }
+
+    // For Catmull-Rom, we need to find which segment we're in
+    // The spline passes through all interior points
+    const numSegments = allPoints.length - 1;
+    const segmentIndex = Math.min(Math.floor(t * numSegments), numSegments - 1);
+    const segmentT = t * numSegments - segmentIndex;
+
+    // Get the 4 control points for this segment
+    // p0 and p3 are for computing tangents, p1 and p2 are the segment endpoints
+    const p1 = allPoints[segmentIndex];
+    const p2 = allPoints[segmentIndex + 1];
+
+    // For p0, use previous point or extrapolate
+    const p0 =
+      segmentIndex > 0
+        ? allPoints[segmentIndex - 1]
+        : extrapolatePoint(p1, p2, -1);
+
+    // For p3, use next point or extrapolate
+    const p3 =
+      segmentIndex < numSegments - 1
+        ? allPoints[segmentIndex + 2]
+        : extrapolatePoint(p1, p2, 2);
+
+    return evaluateCatmullRomSegment(p0, p1, p2, p3, segmentT, tension);
+  };
+}
+
+/**
+ * Extrapolate a point beyond two given points
+ */
+function extrapolatePoint<T extends vec2 | vec3>(
+  p1: T,
+  p2: T,
+  factor: number
+): T {
+  const isVec2Type = isVec2(p1);
+
+  if (isVec2Type && isVec2(p1) && isVec2(p2)) {
+    return {
+      x: p1.x + (p2.x - p1.x) * factor,
+      y: p1.y + (p2.y - p1.y) * factor,
+    } as T;
+  } else if (isVec3(p1) && isVec3(p2)) {
+    return {
+      x: p1.x + (p2.x - p1.x) * factor,
+      y: p1.y + (p2.y - p1.y) * factor,
+      z: p1.z + (p2.z - p1.z) * factor,
+    } as T;
+  }
+
+  throw new Error('Unsupported vector type for extrapolation');
 }

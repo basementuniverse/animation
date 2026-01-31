@@ -289,3 +289,247 @@ const anim2 = new Animation({
   interpolationFunctionParameters: []
 }
 ```
+
+## Spline Interpolation
+
+### bezierPath Function
+
+Creates Bezier curve interpolation function for animating along curved paths.
+
+```typescript
+function bezierPath<T extends vec2 | vec3>(
+  options: BezierPathOptions<T>
+): InterpolationFunction<T>
+```
+
+#### BezierPathOptions<T>
+- `points: T[]` (required) - Control points for Bezier curve (excludes start/end if `useAnimationEndpoints=true`)
+- `order: 1 | 2 | 3` (required) - Bezier order: 1=linear, 2=quadratic, 3=cubic
+- `relative?: 'none' | 'start' | 'start-end'` - Point positioning mode. Default: `'none'`
+  - `'none'`: Absolute coordinates
+  - `'start'`: Offsets from `initialValue`
+  - `'start-end'`: Normalized 0-1 space, scaled between `initialValue` and `targetValue`
+- `useAnimationEndpoints?: boolean` - If true, use `initialValue`/`targetValue` as first/last control points. Default: `true`
+
+#### Behavior
+- Throws error if used with scalar `number` values (only works with `vec2` or `vec3`)
+- For cubic Bezier with `useAnimationEndpoints=true`, requires 2 control points (4 total with endpoints)
+- For quadratic Bezier with `useAnimationEndpoints=true`, requires 1 control point (3 total with endpoints)
+- Control point count must match order: linear=2, quadratic=3, cubic=4 total points
+
+#### Usage Examples
+```typescript
+// Cubic Bezier with normalized control points
+const anim1 = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 100, y: 100 },
+  duration: 2,
+  interpolationFunction: bezierPath({
+    points: [
+      { x: 0.25, y: 0.8 },
+      { x: 0.75, y: 0.2 }
+    ],
+    order: 3,
+    relative: 'start-end'
+  })
+});
+
+// Quadratic Bezier with absolute coordinates
+const anim2 = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 200, y: 200 },
+  duration: 2,
+  interpolationFunction: bezierPath({
+    points: [{ x: 100, y: 0 }],
+    order: 2,
+    relative: 'none'
+  })
+});
+
+// Bezier with start-relative offsets
+const anim3 = new Animation({
+  initialValue: { x: 100, y: 100 },
+  targetValue: { x: 400, y: 100 },
+  duration: 2,
+  interpolationFunction: bezierPath({
+    points: [
+      { x: 50, y: -50 },   // 50 right, 50 up from start
+      { x: 250, y: 100 }   // 250 right, 100 down from start
+    ],
+    order: 3,
+    relative: 'start'
+  })
+});
+
+// 3D Bezier path
+const anim4 = new Animation({
+  initialValue: { x: 0, y: 0, z: 0 },
+  targetValue: { x: 10, y: 10, z: 10 },
+  duration: 2,
+  interpolationFunction: bezierPath({
+    points: [
+      { x: 3, y: 8, z: 2 },
+      { x: 7, y: 2, z: 8 }
+    ],
+    order: 3,
+    relative: 'none'
+  })
+});
+```
+
+### catmullRomPath Function
+
+Creates Catmull-Rom spline interpolation function for smooth paths through multiple waypoints.
+
+```typescript
+function catmullRomPath<T extends vec2 | vec3>(
+  options: CatmullRomPathOptions<T>
+): InterpolationFunction<T>
+```
+
+#### CatmullRomPathOptions<T>
+- `points: T[]` (required) - Control points for spline
+- `tension?: number` - Tension parameter (0=loose, 1=tight). Default: `0.5`
+- `relative?: 'none' | 'start' | 'start-end'` - Point positioning mode. Default: `'none'`
+  - `'none'`: Absolute coordinates
+  - `'start'`: Offsets from `initialValue`
+  - `'start-end'`: Normalized 0-1 space, scaled between `initialValue` and `targetValue`
+- `useAnimationEndpoints?: boolean` - If true, use `initialValue`/`targetValue` as endpoints. Default: `true`
+
+#### Behavior
+- Throws error if used with scalar `number` values (only works with `vec2` or `vec3`)
+- Spline passes through all interior points (interpolating spline)
+- Requires minimum 2 control points (with `useAnimationEndpoints=true`, this means at least 4 total points)
+- With only 2 total points, falls back to linear interpolation
+- Edge tangents computed by extrapolation when needed
+- For N segments (N+1 points), parameter t is distributed evenly across segments
+
+#### Usage Examples
+```typescript
+// Catmull-Rom through waypoints with absolute coordinates
+const anim1 = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 300, y: 300 },
+  duration: 3,
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 50, y: 200 },
+      { x: 150, y: 50 },
+      { x: 250, y: 250 }
+    ],
+    tension: 0.5,
+    relative: 'none'
+  })
+});
+
+// Looser tension for gentler curves
+const anim2 = new Animation({
+  initialValue: { x: 0, y: 100 },
+  targetValue: { x: 400, y: 100 },
+  duration: 4,
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 100, y: 50 },
+      { x: 200, y: 150 },
+      { x: 300, y: 50 }
+    ],
+    tension: 0.2,  // Looser
+    relative: 'none'
+  })
+});
+
+// Normalized waypoints
+const anim3 = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 100, y: 100 },
+  duration: 2,
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 0.3, y: 0.7 },
+      { x: 0.7, y: 0.3 }
+    ],
+    tension: 0.5,
+    relative: 'start-end'
+  })
+});
+
+// 3D Catmull-Rom path
+const anim4 = new Animation({
+  initialValue: { x: 0, y: 0, z: 0 },
+  targetValue: { x: 10, y: 10, z: 10 },
+  duration: 3,
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 2, y: 8, z: 3 },
+      { x: 5, y: 2, z: 7 },
+      { x: 8, y: 7, z: 4 }
+    ],
+    tension: 0.5,
+    relative: 'none'
+  })
+});
+
+// Complex path with many waypoints
+const anim5 = new Animation({
+  initialValue: { x: 0, y: 50 },
+  targetValue: { x: 500, y: 50 },
+  duration: 5,
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 100, y: 10 },
+      { x: 150, y: 90 },
+      { x: 200, y: 20 },
+      { x: 250, y: 80 },
+      { x: 300, y: 30 },
+      { x: 350, y: 70 },
+      { x: 400, y: 40 }
+    ],
+    tension: 0.5,
+    relative: 'none'
+  })
+});
+```
+
+### Common Patterns
+
+```typescript
+// Reusable path configuration with different start/end points
+const pathConfig = {
+  points: [
+    { x: 0.2, y: 0.8 },
+    { x: 0.8, y: 0.2 }
+  ],
+  order: 3 as const,
+  relative: 'start-end' as const
+};
+
+const anim1 = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 100, y: 100 },
+  interpolationFunction: bezierPath(pathConfig)
+});
+
+const anim2 = new Animation({
+  initialValue: { x: 200, y: 200 },
+  targetValue: { x: 400, y: 400 },
+  interpolationFunction: bezierPath(pathConfig)  // Same path shape, different position
+});
+
+// Combining with other animation features
+const complexAnim = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 500, y: 500 },
+  duration: 3,
+  repeat: RepeatMode.PingPong,
+  easeAmount: 0.1,  // Smooth out movement
+  interpolationFunction: catmullRomPath({
+    points: [
+      { x: 100, y: 400 },
+      { x: 250, y: 50 },
+      { x: 400, y: 400 }
+    ],
+    tension: 0.5
+  }),
+  onFinished: () => console.log('Path complete')
+});
+```

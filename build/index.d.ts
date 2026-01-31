@@ -7,6 +7,7 @@ type Color = {
 };
 type AnimatableValue = number | vec2 | vec3 | Color;
 type EasingFunction = (t: number, ...args: any[]) => number;
+type InterpolationFunction<T> = (a: T, b: T, i: number) => T;
 export declare enum AnimationMode {
     /**
      * Animation starts automatically when created
@@ -204,4 +205,108 @@ export declare class MultiAnimation<T extends {
     update(dt: number): void;
 }
 export declare const EasingFunctions: Record<string, EasingFunction>;
+export type BezierPathOptions<T extends vec2 | vec3 = vec2> = {
+    /**
+     * Control points for the Bezier curve (excludes start/end if useAnimationEndpoints is true)
+     */
+    points: T[];
+    /**
+     * The order of the Bezier curve (1 = linear, 2 = quadratic, 3 = cubic)
+     */
+    order: 1 | 2 | 3;
+    /**
+     * Whether points are relative to start, or absolute
+     *
+     * - 'none': Points are absolute coordinates
+     * - 'start': Points are offsets from initialValue
+     * - 'start-end': Points are in normalized 0-1 space, scaled between initialValue and targetValue
+     *
+     * Default is 'none'
+     */
+    relative?: 'none' | 'start' | 'start-end';
+    /**
+     * If true, use initialValue/targetValue as the first/last control points
+     * If false, points array should include all control points
+     *
+     * Default is true
+     */
+    useAnimationEndpoints?: boolean;
+};
+export type CatmullRomPathOptions<T extends vec2 | vec3 = vec2> = {
+    /**
+     * Control points for the Catmull-Rom spline
+     */
+    points: T[];
+    /**
+     * Tension parameter for the Catmull-Rom spline (0 = no tension, 0.5 = default, 1 = tight)
+     *
+     * Default is 0.5
+     */
+    tension?: number;
+    /**
+     * Whether points are relative to start, or absolute
+     *
+     * - 'none': Points are absolute coordinates
+     * - 'start': Points are offsets from initialValue
+     * - 'start-end': Points are in normalized 0-1 space, scaled between initialValue and targetValue
+     *
+     * Default is 'none'
+     */
+    relative?: 'none' | 'start' | 'start-end';
+    /**
+     * If true, use initialValue/targetValue as endpoints in the spline
+     * If false, points array should include all control points
+     *
+     * Default is true
+     */
+    useAnimationEndpoints?: boolean;
+};
+/**
+ * Create a Bezier path interpolation function
+ *
+ * @param options Bezier path options
+ * @returns An interpolation function that evaluates the Bezier curve
+ *
+ * @example
+ * ```typescript
+ * const animation = new Animation({
+ *   initialValue: { x: 0, y: 0 },
+ *   targetValue: { x: 100, y: 100 },
+ *   duration: 2,
+ *   interpolationFunction: bezierPath({
+ *     points: [
+ *       { x: 0.25, y: 0.8 },
+ *       { x: 0.75, y: 0.2 }
+ *     ],
+ *     order: 3,
+ *     relative: 'start-end'
+ *   })
+ * });
+ * ```
+ */
+export declare function bezierPath<T extends vec2 | vec3>(options: BezierPathOptions<T>): InterpolationFunction<T>;
+/**
+ * Create a Catmull-Rom spline interpolation function
+ *
+ * @param options Catmull-Rom spline options
+ * @returns An interpolation function that evaluates the Catmull-Rom spline
+ *
+ * @example
+ * ```typescript
+ * const animation = new Animation({
+ *   initialValue: { x: 0, y: 0 },
+ *   targetValue: { x: 100, y: 100 },
+ *   duration: 2,
+ *   interpolationFunction: catmullRomPath({
+ *     points: [
+ *       { x: 25, y: 80 },
+ *       { x: 75, y: 20 }
+ *     ],
+ *     tension: 0.5,
+ *     relative: 'none'
+ *   })
+ * });
+ * ```
+ */
+export declare function catmullRomPath<T extends vec2 | vec3>(options: CatmullRomPathOptions<T>): InterpolationFunction<T>;
 export {};
