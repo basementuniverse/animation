@@ -40,6 +40,61 @@ export declare enum RepeatMode {
      */
     PingPong = "pingpong"
 }
+export declare enum MarkerDirection {
+    /**
+     * Marker fires when animation plays forward through it
+     */
+    Forward = "forward",
+    /**
+     * Marker fires when animation plays backward through it
+     */
+    Backward = "backward",
+    /**
+     * Marker fires when animation plays through it in either direction
+     */
+    Both = "both"
+}
+export type Marker = {
+    /**
+     * Optional time in seconds (absolute from animation start)
+     *
+     * If both time and progress are provided, time takes precedence
+     */
+    time?: number;
+    /**
+     * Progress value between 0 and 1 (normalized)
+     *
+     * If both time and progress are provided, time takes precedence
+     */
+    progress?: number;
+    /**
+     * Optional name for this marker
+     */
+    name?: string;
+    /**
+     * Direction in which this marker should fire
+     *
+     * Default is 'both'
+     */
+    direction?: MarkerDirection;
+    /**
+     * If true, this marker will only fire once per loop
+     *
+     * Default is false (fires every time it's crossed)
+     */
+    once?: boolean;
+    /**
+     * If true, this marker will only fire once per animation lifetime
+     * (not reset on repeat boundaries)
+     *
+     * Default is false
+     */
+    global?: boolean;
+    /**
+     * Callback when this marker is reached
+     */
+    callback: (marker: Marker) => void;
+};
 export type AnimationOptions<T extends AnimatableValue> = {
     /**
      * The initial value for this animation
@@ -156,6 +211,19 @@ export type AnimationOptions<T extends AnimatableValue> = {
      * The callback receives the index of the stop reached (starting from 0)
      */
     onStopReached?: (index: number) => void;
+    /**
+     * Optional array of markers for this animation
+     *
+     * Markers can be used to trigger events at specific points during the
+     * animation
+     */
+    markers?: Marker[];
+    /**
+     * Optional callback when a marker is reached
+     *
+     * The callback receives the marker that was reached
+     */
+    onMarkerReached?: (marker: Marker) => void;
 };
 export declare class Animation<T extends AnimatableValue = number> {
     private static readonly DEFAULT_OPTIONS;
@@ -164,6 +232,9 @@ export declare class Animation<T extends AnimatableValue = number> {
     private options;
     private interpolationFunction?;
     private hasCalledFinishedCallback;
+    private previousProgress;
+    private firedMarkersThisLoop;
+    private firedMarkersGlobal;
     progress: number;
     running: boolean;
     holding: boolean;
@@ -176,6 +247,9 @@ export declare class Animation<T extends AnimatableValue = number> {
     } & Partial<AnimationOptions<T>>);
     private getInterpolationFunction;
     get current(): T;
+    get markers(): Marker[] | undefined;
+    get animationOptions(): AnimationOptions<T>;
+    private checkMarkers;
     start(): void;
     stop(): void;
     reset(): void;
@@ -202,6 +276,133 @@ export declare class MultiAnimation<T extends {
     start(): void;
     stop(): void;
     reset(): void;
+    update(dt: number): void;
+}
+export declare enum AnimationTimelineMode {
+    /**
+     * Timeline starts automatically when created
+     */
+    Auto = "auto",
+    /**
+     * Timeline starts when triggered manually by calling the `start` method
+     */
+    Trigger = "trigger",
+    /**
+     * Timeline is controlled manually by setting the progress or globalTime
+     */
+    Manual = "manual"
+}
+export type TimelineTrack = {
+    /**
+     * The animation or multi-animation for this track
+     */
+    animation: Animation<any> | MultiAnimation<any>;
+    /**
+     * Optional label/name for this track
+     */
+    label?: string;
+    /**
+     * Start time in seconds (absolute mode) or progress 0-1 (relative mode)
+     */
+    start: number;
+    /**
+     * End time in seconds (absolute mode) or progress 0-1 (relative mode)
+     * If not provided, calculated from animation duration
+     */
+    end?: number;
+};
+export type AnimationTimelineOptions = {
+    /**
+     * The mode of this timeline
+     *
+     * Default is Auto
+     */
+    mode?: AnimationTimelineMode;
+    /**
+     * Duration mode for tracks
+     *
+     * - 'absolute': Track start/end times are in seconds
+     * - 'relative': Track start/end times are normalized 0-1 progress values
+     *
+     * Default is 'absolute'
+     */
+    durationMode?: 'absolute' | 'relative';
+    /**
+     * Total duration of the timeline in seconds
+     * Required when using relative durationMode
+     */
+    duration?: number;
+    /**
+     * Optional callback when timeline finishes
+     */
+    onFinished?: () => void;
+    /**
+     * Optional callback when a track starts
+     */
+    onTrackStart?: (track: TimelineTrack) => void;
+    /**
+     * Optional callback when a track ends
+     */
+    onTrackEnd?: (track: TimelineTrack) => void;
+    /**
+     * Optional callback when any marker in the timeline is reached
+     */
+    onMarkerReached?: (marker: Marker, track: TimelineTrack) => void;
+};
+export declare class AnimationTimeline {
+    private static readonly DEFAULT_OPTIONS;
+    private options;
+    private tracks;
+    private activeTrackIndices;
+    private hasCalledFinishedCallback;
+    globalTime: number;
+    running: boolean;
+    finished: boolean;
+    constructor(options?: Partial<AnimationTimelineOptions>);
+    /**
+     * Get the total duration of the timeline
+     */
+    get duration(): number;
+    /**
+     * Get normalized progress (0-1)
+     */
+    get progress(): number;
+    /**
+     * Set normalized progress (0-1)
+     */
+    set progress(value: number);
+    /**
+     * Add an animation track to the timeline
+     */
+    addAnimation<T extends AnimatableValue>(animation: Animation<T>, start: number, end?: number, label?: string): void;
+    /**
+     * Add a multi-animation track to the timeline
+     */
+    addMultiAnimation<T extends {
+        [K in keyof T]: AnimatableValue;
+    }>(animation: MultiAnimation<T>, start: number, end?: number, label?: string): void;
+    /**
+     * Get all tracks with a specific label
+     */
+    getTracksByLabel(label: string): TimelineTrack[];
+    /**
+     * Get current values from all active tracks
+     */
+    get current(): {
+        [key: string]: any;
+    };
+    start(): void;
+    stop(): void;
+    reset(): void;
+    /**
+     * Seek to a specific time in the timeline
+     */
+    seek(time: number): void;
+    /**
+     * Seek to a normalized progress value (0-1)
+     */
+    seekToProgress(progress: number): void;
+    private updateTracksAtTime;
     update(dt: number): void;
 }
 export declare const EasingFunctions: Record<string, EasingFunction>;

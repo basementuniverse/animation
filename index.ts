@@ -103,6 +103,71 @@ export enum RepeatMode {
   PingPong = 'pingpong',
 }
 
+export enum MarkerDirection {
+  /**
+   * Marker fires when animation plays forward through it
+   */
+  Forward = 'forward',
+
+  /**
+   * Marker fires when animation plays backward through it
+   */
+  Backward = 'backward',
+
+  /**
+   * Marker fires when animation plays through it in either direction
+   */
+  Both = 'both',
+}
+
+export type Marker = {
+  /**
+   * Optional time in seconds (absolute from animation start)
+   *
+   * If both time and progress are provided, time takes precedence
+   */
+  time?: number;
+
+  /**
+   * Progress value between 0 and 1 (normalized)
+   *
+   * If both time and progress are provided, time takes precedence
+   */
+  progress?: number;
+
+  /**
+   * Optional name for this marker
+   */
+  name?: string;
+
+  /**
+   * Direction in which this marker should fire
+   *
+   * Default is 'both'
+   */
+  direction?: MarkerDirection;
+
+  /**
+   * If true, this marker will only fire once per loop
+   *
+   * Default is false (fires every time it's crossed)
+   */
+  once?: boolean;
+
+  /**
+   * If true, this marker will only fire once per animation lifetime
+   * (not reset on repeat boundaries)
+   *
+   * Default is false
+   */
+  global?: boolean;
+
+  /**
+   * Callback when this marker is reached
+   */
+  callback: (marker: Marker) => void;
+};
+
 export type AnimationOptions<T extends AnimatableValue> = {
   /**
    * The initial value for this animation
@@ -236,6 +301,21 @@ export type AnimationOptions<T extends AnimatableValue> = {
    * The callback receives the index of the stop reached (starting from 0)
    */
   onStopReached?: (index: number) => void;
+
+  /**
+   * Optional array of markers for this animation
+   *
+   * Markers can be used to trigger events at specific points during the
+   * animation
+   */
+  markers?: Marker[];
+
+  /**
+   * Optional callback when a marker is reached
+   *
+   * The callback receives the marker that was reached
+   */
+  onMarkerReached?: (marker: Marker) => void;
 };
 
 // -----------------------------------------------------------------------------
@@ -261,6 +341,9 @@ export class Animation<T extends AnimatableValue = number> {
   private options: AnimationOptions<T>;
   private interpolationFunction?: InterpolationFunction<T>;
   private hasCalledFinishedCallback: boolean = false;
+  private previousProgress: number = 0;
+  private firedMarkersThisLoop: Set<number> = new Set();
+  private firedMarkersGlobal: Set<number> = new Set();
 
   public progress: number = 0;
   public running: boolean = false;
@@ -353,6 +436,136 @@ export class Animation<T extends AnimatableValue = number> {
     return this.actualValue;
   }
 
+  public get markers(): Marker[] | undefined {
+    return this.options.markers;
+  }
+
+  public get animationOptions(): AnimationOptions<T> {
+    return this.options;
+  }
+
+  private checkMarkers(): void {
+    if (!this.options.markers || this.options.markers.length === 0) {
+      return;
+    }
+
+    const duration = Math.max(1e-8, this.options.duration || 1);
+
+    // Convert marker positions to progress and check for crossings
+    for (let i = 0; i < this.options.markers.length; i++) {
+      const marker = this.options.markers[i];
+
+      // Calculate marker progress (prefer time over progress)
+      let markerProgress: number;
+      if (marker.time !== undefined) {
+        markerProgress = clamp(marker.time / duration, 0, 1);
+      } else if (marker.progress !== undefined) {
+        markerProgress = marker.progress;
+      } else {
+        continue; // Skip markers without time or progress
+      }
+
+      // Check if marker should fire based on global flag
+      if (marker.global && this.firedMarkersGlobal.has(i)) {
+        continue;
+      }
+
+      // Check if marker should fire based on once flag
+      if (marker.once && this.firedMarkersThisLoop.has(i)) {
+        continue;
+      }
+
+      // Check direction
+      const direction = marker.direction || MarkerDirection.Both;
+      const crossedForward =
+        this.previousProgress < markerProgress &&
+        this.progress >= markerProgress &&
+        Math.abs(this.progress - markerProgress) < 1e-6;
+      const crossedBackward =
+        this.previousProgress > markerProgress &&
+        this.progress <= markerProgress &&
+        Math.abs(this.progress - markerProgress) < 1e-6;
+
+      let shouldFire = false;
+      if (direction === MarkerDirection.Both) {
+        shouldFire = crossedForward || crossedBackward;
+      } else if (direction === MarkerDirection.Forward) {
+        shouldFire = crossedForward && this.direction === 1;
+      } else if (direction === MarkerDirection.Backward) {
+        shouldFire = crossedBackward && this.direction === -1;
+      }
+
+      if (shouldFire) {
+        // Mark as fired
+        if (marker.once) {
+          this.firedMarkersThisLoop.add(i);
+        }
+        if (marker.global) {
+          this.firedMarkersGlobal.add(i);
+        }
+
+        // Fire callback
+        marker.callback(marker);
+        this.options.onMarkerReached?.(marker);
+      }
+    }
+
+    // Also check for any markers we might have skipped over due to large dt
+    for (let i = 0; i < this.options.markers.length; i++) {
+      const marker = this.options.markers[i];
+
+      // Calculate marker progress
+      let markerProgress: number;
+      if (marker.time !== undefined) {
+        markerProgress = clamp(marker.time / duration, 0, 1);
+      } else if (marker.progress !== undefined) {
+        markerProgress = marker.progress;
+      } else {
+        continue;
+      }
+
+      // Check if we skipped over this marker
+      const skippedForward =
+        this.previousProgress < markerProgress &&
+        this.progress > markerProgress &&
+        Math.abs(this.progress - markerProgress) >= 1e-6;
+      const skippedBackward =
+        this.previousProgress > markerProgress &&
+        this.progress < markerProgress &&
+        Math.abs(this.progress - markerProgress) >= 1e-6;
+
+      // Check if marker should fire based on flags
+      if (marker.global && this.firedMarkersGlobal.has(i)) {
+        continue;
+      }
+      if (marker.once && this.firedMarkersThisLoop.has(i)) {
+        continue;
+      }
+
+      const direction = marker.direction || MarkerDirection.Both;
+      let shouldFire = false;
+      if (direction === MarkerDirection.Both) {
+        shouldFire = skippedForward || skippedBackward;
+      } else if (direction === MarkerDirection.Forward) {
+        shouldFire = skippedForward && this.direction === 1;
+      } else if (direction === MarkerDirection.Backward) {
+        shouldFire = skippedBackward && this.direction === -1;
+      }
+
+      if (shouldFire) {
+        if (marker.once) {
+          this.firedMarkersThisLoop.add(i);
+        }
+        if (marker.global) {
+          this.firedMarkersGlobal.add(i);
+        }
+
+        marker.callback(marker);
+        this.options.onMarkerReached?.(marker);
+      }
+    }
+  }
+
   public start(): void {
     this.running = true;
   }
@@ -364,12 +577,15 @@ export class Animation<T extends AnimatableValue = number> {
   public reset(): void {
     this.time = 0;
     this.progress = 0;
+    this.previousProgress = 0;
     this.actualValue = this.options.initialValue;
     this.running = false;
     this.repeatCount = 0;
     this.direction = 1;
     this.finished = false;
     this.hasCalledFinishedCallback = false;
+    this.firedMarkersThisLoop.clear();
+    this.firedMarkersGlobal.clear();
 
     if (this.options.mode === AnimationMode.Auto) {
       this.start();
@@ -444,6 +660,7 @@ export class Animation<T extends AnimatableValue = number> {
     } else if (repeat === RepeatMode.Loop) {
       if (this.direction === 1 && newProgress >= 1) {
         this.repeatCount++;
+        this.firedMarkersThisLoop.clear(); // Clear loop markers on repeat
         this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 1;
@@ -453,6 +670,7 @@ export class Animation<T extends AnimatableValue = number> {
         }
       } else if (this.direction === -1 && newProgress <= 0) {
         this.repeatCount++;
+        this.firedMarkersThisLoop.clear(); // Clear loop markers on repeat
         this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 0;
@@ -465,6 +683,7 @@ export class Animation<T extends AnimatableValue = number> {
       if (this.direction === 1 && newProgress >= 1) {
         this.direction = -1;
         this.repeatCount++;
+        this.firedMarkersThisLoop.clear(); // Clear loop markers on repeat
         this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 1;
@@ -475,6 +694,7 @@ export class Animation<T extends AnimatableValue = number> {
       } else if (this.direction === -1 && newProgress <= 0) {
         this.direction = 1;
         this.repeatCount++;
+        this.firedMarkersThisLoop.clear(); // Clear loop markers on repeat
         this.options.onRepeat?.(this.repeatCount);
         if (repeats > 0 && this.repeatCount >= repeats) {
           newProgress = 0;
@@ -496,6 +716,12 @@ export class Animation<T extends AnimatableValue = number> {
     }
 
     this.progress = newProgress;
+
+    // Check markers
+    this.checkMarkers();
+
+    // Update previousProgress for next frame
+    this.previousProgress = this.progress;
 
     // Compute value (handle stops/keyframes)
     let value: T;
@@ -712,6 +938,363 @@ export class MultiAnimation<T extends { [K in keyof T]: AnimatableValue }> {
       this.animations[key as keyof T]?.update(dt);
     }
     this.updateCurrent();
+  }
+}
+
+// -----------------------------------------------------------------------------
+// AnimationTimeline types & options
+// -----------------------------------------------------------------------------
+
+export enum AnimationTimelineMode {
+  /**
+   * Timeline starts automatically when created
+   */
+  Auto = 'auto',
+
+  /**
+   * Timeline starts when triggered manually by calling the `start` method
+   */
+  Trigger = 'trigger',
+
+  /**
+   * Timeline is controlled manually by setting the progress or globalTime
+   */
+  Manual = 'manual',
+}
+
+export type TimelineTrack = {
+  /**
+   * The animation or multi-animation for this track
+   */
+  animation: Animation<any> | MultiAnimation<any>;
+
+  /**
+   * Optional label/name for this track
+   */
+  label?: string;
+
+  /**
+   * Start time in seconds (absolute mode) or progress 0-1 (relative mode)
+   */
+  start: number;
+
+  /**
+   * End time in seconds (absolute mode) or progress 0-1 (relative mode)
+   * If not provided, calculated from animation duration
+   */
+  end?: number;
+};
+
+export type AnimationTimelineOptions = {
+  /**
+   * The mode of this timeline
+   *
+   * Default is Auto
+   */
+  mode?: AnimationTimelineMode;
+
+  /**
+   * Duration mode for tracks
+   *
+   * - 'absolute': Track start/end times are in seconds
+   * - 'relative': Track start/end times are normalized 0-1 progress values
+   *
+   * Default is 'absolute'
+   */
+  durationMode?: 'absolute' | 'relative';
+
+  /**
+   * Total duration of the timeline in seconds
+   * Required when using relative durationMode
+   */
+  duration?: number;
+
+  /**
+   * Optional callback when timeline finishes
+   */
+  onFinished?: () => void;
+
+  /**
+   * Optional callback when a track starts
+   */
+  onTrackStart?: (track: TimelineTrack) => void;
+
+  /**
+   * Optional callback when a track ends
+   */
+  onTrackEnd?: (track: TimelineTrack) => void;
+
+  /**
+   * Optional callback when any marker in the timeline is reached
+   */
+  onMarkerReached?: (marker: Marker, track: TimelineTrack) => void;
+};
+
+// -----------------------------------------------------------------------------
+// AnimationTimeline class
+// -----------------------------------------------------------------------------
+
+export class AnimationTimeline {
+  private static readonly DEFAULT_OPTIONS: Partial<AnimationTimelineOptions> = {
+    mode: AnimationTimelineMode.Auto,
+    durationMode: 'absolute',
+  };
+
+  private options: AnimationTimelineOptions;
+  private tracks: TimelineTrack[] = [];
+  private activeTrackIndices: Set<number> = new Set();
+  private hasCalledFinishedCallback: boolean = false;
+
+  public globalTime: number = 0;
+  public running: boolean = false;
+  public finished: boolean = false;
+
+  public constructor(options: Partial<AnimationTimelineOptions> = {}) {
+    this.options = {
+      ...AnimationTimeline.DEFAULT_OPTIONS,
+      ...options,
+    } as AnimationTimelineOptions;
+
+    if (this.options.mode === AnimationTimelineMode.Auto) {
+      this.start();
+    }
+  }
+
+  /**
+   * Get the total duration of the timeline
+   */
+  public get duration(): number {
+    if (this.options.durationMode === 'relative' && this.options.duration) {
+      return this.options.duration;
+    }
+
+    // Calculate duration from tracks in absolute mode
+    let maxEnd = 0;
+    for (const track of this.tracks) {
+      const animDuration = (track.animation as any).options?.duration ?? 0;
+      const end = track.end ?? track.start + animDuration;
+      maxEnd = Math.max(maxEnd, end);
+    }
+    return maxEnd;
+  }
+
+  /**
+   * Get normalized progress (0-1)
+   */
+  public get progress(): number {
+    const duration = this.duration;
+    return duration > 0 ? clamp(this.globalTime / duration, 0, 1) : 0;
+  }
+
+  /**
+   * Set normalized progress (0-1)
+   */
+  public set progress(value: number) {
+    this.globalTime = value * this.duration;
+    this.updateTracksAtTime(0); // Update with dt=0 to recompute values
+  }
+
+  /**
+   * Add an animation track to the timeline
+   */
+  public addAnimation<T extends AnimatableValue>(
+    animation: Animation<T>,
+    start: number,
+    end?: number,
+    label?: string
+  ): void {
+    this.tracks.push({
+      animation,
+      label,
+      start,
+      end,
+    });
+  }
+
+  /**
+   * Add a multi-animation track to the timeline
+   */
+  public addMultiAnimation<T extends { [K in keyof T]: AnimatableValue }>(
+    animation: MultiAnimation<T>,
+    start: number,
+    end?: number,
+    label?: string
+  ): void {
+    this.tracks.push({
+      animation,
+      label,
+      start,
+      end,
+    });
+  }
+
+  /**
+   * Get all tracks with a specific label
+   */
+  public getTracksByLabel(label: string): TimelineTrack[] {
+    return this.tracks.filter(track => track.label === label);
+  }
+
+  /**
+   * Get current values from all active tracks
+   */
+  public get current(): { [key: string]: any } {
+    const result: { [key: string]: any } = {};
+    for (const index of this.activeTrackIndices) {
+      const track = this.tracks[index];
+      if (track.label) {
+        result[track.label] = track.animation.current;
+      }
+    }
+    return result;
+  }
+
+  public start(): void {
+    this.running = true;
+  }
+
+  public stop(): void {
+    this.running = false;
+  }
+
+  public reset(): void {
+    this.globalTime = 0;
+    this.running = false;
+    this.finished = false;
+    this.hasCalledFinishedCallback = false;
+    this.activeTrackIndices.clear();
+
+    // Reset all tracks
+    for (const track of this.tracks) {
+      track.animation.reset();
+      track.animation.stop();
+    }
+
+    if (this.options.mode === AnimationTimelineMode.Auto) {
+      this.start();
+    }
+  }
+
+  /**
+   * Seek to a specific time in the timeline
+   */
+  public seek(time: number): void {
+    const previousTime = this.globalTime;
+    this.globalTime = time;
+
+    // Reset all tracks and replay up to this point
+    for (const track of this.tracks) {
+      track.animation.reset();
+      track.animation.stop();
+    }
+    this.activeTrackIndices.clear();
+
+    // Update to current time
+    this.updateTracksAtTime(time - previousTime);
+  }
+
+  /**
+   * Seek to a normalized progress value (0-1)
+   */
+  public seekToProgress(progress: number): void {
+    this.seek(progress * this.duration);
+  }
+
+  private updateTracksAtTime(dt: number): void {
+    const duration = this.duration;
+    const durationMode = this.options.durationMode || 'absolute';
+
+    for (let i = 0; i < this.tracks.length; i++) {
+      const track = this.tracks[i];
+
+      // Convert track times based on mode
+      let trackStart: number;
+      let trackEnd: number;
+
+      if (durationMode === 'relative') {
+        trackStart = track.start * duration;
+        trackEnd =
+          track.end !== undefined
+            ? track.end * duration
+            : trackStart + ((track.animation as any).options?.duration ?? 0);
+      } else {
+        trackStart = track.start;
+        trackEnd =
+          track.end !== undefined
+            ? track.end
+            : trackStart + ((track.animation as any).options?.duration ?? 0);
+      }
+
+      const wasActive = this.activeTrackIndices.has(i);
+      const isActive =
+        this.globalTime >= trackStart && this.globalTime <= trackEnd;
+
+      // Track started
+      if (isActive && !wasActive) {
+        this.activeTrackIndices.add(i);
+        track.animation.reset();
+
+        // Set up marker callback forwarding if this is an Animation
+        if (track.animation instanceof Animation) {
+          const animation = track.animation as Animation<any>;
+          const originalOnMarkerReached =
+            animation.animationOptions.onMarkerReached;
+
+          // Wrap the onMarkerReached callback to also notify timeline
+          animation.animationOptions.onMarkerReached = (marker: Marker) => {
+            originalOnMarkerReached?.(marker);
+            this.options.onMarkerReached?.(marker, track);
+          };
+        }
+
+        track.animation.start();
+        this.options.onTrackStart?.(track);
+      }
+
+      // Track ended
+      if (!isActive && wasActive) {
+        this.activeTrackIndices.delete(i);
+        track.animation.stop();
+        this.options.onTrackEnd?.(track);
+      }
+
+      // Update active track
+      if (isActive) {
+        track.animation.update(dt);
+      }
+    }
+  }
+
+  public update(dt: number): void {
+    if (this.options.mode !== AnimationTimelineMode.Manual && !this.running) {
+      return;
+    }
+
+    if (this.options.mode === AnimationTimelineMode.Manual) {
+      // In manual mode, just update tracks at current time
+      this.updateTracksAtTime(0);
+      return;
+    }
+
+    this.globalTime += dt;
+
+    // Update all active tracks
+    this.updateTracksAtTime(dt);
+
+    // Check if timeline finished
+    const duration = this.duration;
+    if (this.globalTime >= duration && !this.hasCalledFinishedCallback) {
+      this.running = false;
+      this.finished = true;
+      this.hasCalledFinishedCallback = true;
+      this.options.onFinished?.();
+    }
+
+    // Reset finished flag if we move away from the end
+    if (this.globalTime < duration && this.hasCalledFinishedCallback) {
+      this.hasCalledFinishedCallback = false;
+      this.finished = false;
+    }
   }
 }
 

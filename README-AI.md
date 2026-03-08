@@ -533,3 +533,276 @@ const complexAnim = new Animation({
   onFinished: () => console.log('Path complete')
 });
 ```
+
+## Markers
+
+### Marker Type
+```typescript
+type Marker = {
+  time?: number;           // Absolute time in seconds (takes precedence over progress)
+  progress?: number;       // Normalized progress 0-1
+  name?: string;           // Optional identifier
+  direction?: MarkerDirection;  // When to fire
+  once?: boolean;          // Fire only once per loop (default: false)
+  global?: boolean;        // Fire only once per lifetime (default: false)
+  callback: (marker: Marker) => void;
+};
+
+enum MarkerDirection {
+  Forward = 'forward',   // Fire only when playing forward
+  Backward = 'backward', // Fire only when playing backward
+  Both = 'both'          // Fire in either direction (default)
+}
+```
+
+### Marker Behavior
+- **Time vs Progress**: If both specified, `time` takes precedence and is converted to progress internally
+- **Crossing Detection**: Markers fire when animation progress crosses the marker point (within 1e-6 tolerance)
+- **Large dt Handling**: Multiple markers crossed in single update are fired in order
+- **Repeat Modes**:
+  - `once: true` - Cleared on repeat boundaries (Loop/PingPong mode)
+  - `global: true` - Never cleared, fires once per animation lifetime
+- **Direction**: Respects animation `direction` property (1=forward, -1=backward)
+
+### Adding Markers to Animation
+```typescript
+const anim = new Animation({
+  initialValue: 0,
+  targetValue: 100,
+  duration: 5,
+  repeat: RepeatMode.Loop,
+  markers: [
+    {
+      progress: 0.5,
+      name: 'halfway',
+      callback: (m) => console.log('Halfway'),
+    },
+    {
+      time: 2,
+      direction: MarkerDirection.Forward,
+      once: true,
+      callback: (m) => console.log('2 seconds (forward only, once per loop)'),
+    },
+    {
+      progress: 0.9,
+      global: true,
+      callback: (m) => console.log('90% (fires once ever)'),
+    }
+  ],
+  onMarkerReached: (marker) => {
+    // Global callback for all markers
+    console.log('Marker:', marker.name);
+  }
+});
+```
+
+### Marker Firing Order
+1. Check markers between `previousProgress` and `progress`
+2. Fire exact matches (within 1e-6 tolerance)
+3. Fire skipped markers (for large dt)
+4. Respect `once` and `global` flags
+5. Call marker's `callback` then animation's `onMarkerReached`
+
+## AnimationTimeline
+
+Timeline for sequencing and coordinating multiple animations with precise timing.
+
+### Constructor
+```typescript
+new AnimationTimeline(options?: Partial<AnimationTimelineOptions>)
+```
+
+### AnimationTimelineOptions
+```typescript
+type AnimationTimelineOptions = {
+  mode?: AnimationTimelineMode;           // Default: Auto
+  durationMode?: 'absolute' | 'relative'; // Default: 'absolute'
+  duration?: number;                      // Required for relative mode
+  onFinished?: () => void;
+  onTrackStart?: (track: TimelineTrack) => void;
+  onTrackEnd?: (track: TimelineTrack) => void;
+  onMarkerReached?: (marker: Marker, track: TimelineTrack) => void;
+};
+
+enum AnimationTimelineMode {
+  Auto = 'auto',       // Starts automatically
+  Trigger = 'trigger', // Starts on .start() call
+  Manual = 'manual'    // Controlled by progress/globalTime
+}
+
+type TimelineTrack = {
+  animation: Animation<any> | MultiAnimation<any>;
+  label?: string;
+  start: number;  // Seconds (absolute) or 0-1 (relative)
+  end?: number;   // Calculated from animation.duration if not provided
+};
+```
+
+### Public Properties
+- `globalTime: number` - Current time in seconds
+- `duration: number` (getter) - Total timeline duration
+- `progress: number` (getter/setter) - Normalized progress 0-1
+- `running: boolean` - Whether timeline is playing
+- `finished: boolean` - Whether timeline completed
+- `current: { [label: string]: any }` (getter) - Current values from labeled tracks
+
+### Public Methods
+- `addAnimation<T>(animation: Animation<T>, start: number, end?: number, label?: string): void`
+- `addMultiAnimation<T>(animation: MultiAnimation<T>, start: number, end?: number, label?: string): void`
+- `getTracksByLabel(label: string): TimelineTrack[]`
+- `start(): void`
+- `stop(): void`
+- `reset(): void`
+- `seek(time: number): void` - Seek to absolute time
+- `seekToProgress(progress: number): void` - Seek to normalized progress
+- `update(dt: number): void`
+
+### Duration Modes
+
+#### Absolute Mode (default)
+Track times are in seconds:
+```typescript
+const timeline = new AnimationTimeline({ durationMode: 'absolute' });
+
+const anim = new Animation({
+  initialValue: 0,
+  targetValue: 100,
+  duration: 2
+});
+
+timeline.addAnimation(anim, 1, 3, 'fadeIn');  // Runs from 1s to 3s
+// Timeline duration auto-calculated as max(track ends) = 3s
+```
+
+#### Relative Mode
+Track times are normalized 0-1, scaled to timeline duration:
+```typescript
+const timeline = new AnimationTimeline({
+  durationMode: 'relative',
+  duration: 10  // Total timeline is 10 seconds
+});
+
+const anim = new Animation({
+  initialValue: 0,
+  targetValue: 100,
+  duration: 2  // Animation's internal duration
+});
+
+timeline.addAnimation(anim, 0.2, 0.4, 'fadeIn');
+// Runs from 2s to 4s (20% to 40% of 10s timeline)
+```
+
+### Track Timing
+- Tracks activate when `globalTime >= trackStart && globalTime <= trackEnd`
+- On activation: Track resets, starts, fires `onTrackStart`
+- On deactivation: Track stops, fires `onTrackEnd`
+- Active tracks update each frame with `dt`
+
+### Marker Integration
+Timeline forwards marker events from Animation tracks:
+```typescript
+const anim = new Animation({
+  initialValue: 0,
+  targetValue: 100,
+  duration: 2,
+  markers: [
+    { progress: 0.5, name: 'mid', callback: (m) => console.log('anim mid') }
+  ]
+});
+
+const timeline = new AnimationTimeline({
+  onMarkerReached: (marker, track) => {
+    console.log(`Marker ${marker.name} in track ${track.label}`);
+  }
+});
+
+timeline.addAnimation(anim, 0, 2, 'myAnim');
+// When marker fires: both callbacks execute (marker's + timeline's)
+```
+
+### Usage Examples
+
+#### Sequential Animations
+```typescript
+const timeline = new AnimationTimeline({ durationMode: 'absolute' });
+
+const fadeIn = new Animation({ initialValue: 0, targetValue: 1, duration: 1 });
+const move = new Animation({ initialValue: 0, targetValue: 100, duration: 2 });
+const fadeOut = new Animation({ initialValue: 1, targetValue: 0, duration: 1 });
+
+timeline.addAnimation(fadeIn, 0, 1, 'fadeIn');     // 0-1s
+timeline.addAnimation(move, 1, 3, 'move');         // 1-3s
+timeline.addAnimation(fadeOut, 3, 4, 'fadeOut');   // 3-4s
+
+timeline.update(1/60);
+const { fadeIn, move, fadeOut } = timeline.current;
+```
+
+#### Overlapping Animations
+```typescript
+const timeline = new AnimationTimeline({
+  durationMode: 'relative',
+  duration: 5
+});
+
+const anim1 = new Animation({ initialValue: 0, targetValue: 100, duration: 2 });
+const anim2 = new Animation({ initialValue: 100, targetValue: 0, duration: 2 });
+
+timeline.addAnimation(anim1, 0, 0.6, 'first');   // 0s-3s (0% to 60% of 5s)
+timeline.addAnimation(anim2, 0.4, 1, 'second');  // 2s-5s (40% to 100% of 5s)
+// Overlap: 2s-3s both animations active
+```
+
+#### Manual Control
+```typescript
+const timeline = new AnimationTimeline({
+  mode: AnimationTimelineMode.Manual,
+  durationMode: 'relative',
+  duration: 10
+});
+
+// Scrub timeline with UI slider
+timeline.progress = sliderValue;  // 0-1
+timeline.update(0);  // Update with dt=0 to recompute
+
+// Or seek to specific time
+timeline.seek(3.5);  // Jump to 3.5 seconds
+```
+
+### Implementation Notes
+- Timeline doesn't blend overlapping tracks - later updates overwrite earlier ones
+- Seek operation resets all tracks and replays up to seek point
+- In Manual mode, animations don't auto-advance - only respond to progress changes
+- Track duration auto-calculated if `end` not provided: `start + animation.duration`
+- Timeline `finished` flag set when `globalTime >= duration`
+
+## Default Values Summary
+```typescript
+// Animation
+{
+  mode: AnimationMode.Auto,
+  repeat: RepeatMode.Once,
+  repeats: 0,
+  duration: 1,
+  delay: 0,
+  clamp: true,
+  round: false,
+  easeAmount: 0,
+  interpolationFunction: 'linear',
+  interpolationFunctionParameters: [],
+  markers: undefined
+}
+
+// AnimationTimeline
+{
+  mode: AnimationTimelineMode.Auto,
+  durationMode: 'absolute'
+}
+
+// Marker
+{
+  direction: MarkerDirection.Both,
+  once: false,
+  global: false
+}
+```

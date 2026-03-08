@@ -190,6 +190,141 @@ const animation = new Animation({
 
 See `./demos/spline-animation.html` for interactive examples.
 
+### Markers
+
+Markers allow you to trigger events at specific points during an animation. They can be defined using either absolute time (in seconds) or normalized progress (0-1).
+
+```js
+import { MarkerDirection } from '@basementuniverse/animation';
+
+const animation = new Animation({
+  initialValue: 0,
+  targetValue: 100,
+  duration: 5,
+  markers: [
+    {
+      progress: 0.25,  // Fire at 25% through the animation
+      name: 'quarter',
+      callback: (marker) => {
+        console.log(`Reached ${marker.name}`);
+      }
+    },
+    {
+      time: 3,  // Fire at 3 seconds (time takes precedence over progress)
+      name: 'three-seconds',
+      direction: MarkerDirection.Forward,  // Only fire when playing forward
+      once: true,  // Only fire once per loop
+      callback: (marker) => {
+        console.log('3 seconds elapsed');
+      }
+    },
+    {
+      progress: 0.75,
+      global: true,  // Only fire once in the animation's lifetime
+      callback: () => {
+        console.log('Passed 75% mark for the first time');
+      }
+    }
+  ],
+  onMarkerReached: (marker) => {
+    // Global callback for all markers
+    console.log('Any marker reached:', marker.name);
+  }
+});
+```
+
+Marker options:
+
+- `time?: number` - Time in seconds (takes precedence over `progress`)
+- `progress?: number` - Normalized progress (0-1)
+- `name?: string` - Optional name for the marker
+- `direction?: MarkerDirection` - When to fire: `Forward`, `Backward`, or `Both` (default)
+- `once?: boolean` - If true, only fires once per loop (resets on repeat boundaries)
+- `global?: boolean` - If true, only fires once in the animation's lifetime
+- `callback: (marker) => void` - Function to call when marker is reached
+
+### AnimationTimeline
+
+`AnimationTimeline` allows you to coordinate multiple animations with precise timing control, creating complex sequences and choreographies.
+
+```js
+import { AnimationTimeline, AnimationTimelineMode } from '@basementuniverse/animation';
+
+const timeline = new AnimationTimeline({
+  mode: AnimationTimelineMode.Auto,
+  durationMode: 'relative',  // or 'absolute'
+  duration: 10,  // Total timeline duration (required for relative mode)
+  onFinished: () => console.log('Timeline complete'),
+  onTrackStart: (track) => console.log('Track started:', track.label),
+  onTrackEnd: (track) => console.log('Track ended:', track.label),
+  onMarkerReached: (marker, track) => {
+    console.log('Marker reached in track:', track.label, marker.name);
+  }
+});
+
+// Add animations with absolute timing (in seconds)
+const anim1 = new Animation({
+  initialValue: 0,
+  targetValue: 100,
+  duration: 2
+});
+timeline.addAnimation(anim1, 0, 2, 'fadeIn');  // start=0s, end=2s
+
+// Add animations with relative timing (0-1 progress)
+// When durationMode is 'relative', times are normalized to timeline duration
+const anim2 = new Animation({
+  initialValue: { x: 0, y: 0 },
+  targetValue: { x: 100, y: 100 },
+  duration: 3
+});
+timeline.addAnimation(anim2, 0.2, 0.5, 'move');  // starts at 20%, ends at 50%
+
+// Add multi-animations
+const multiAnim = new MultiAnimation({
+  scale: { initialValue: 1, targetValue: 2 },
+  rotation: { initialValue: 0, targetValue: Math.PI }
+});
+timeline.addMultiAnimation(multiAnim, 0.5, 1, 'scaleAndRotate');
+
+// Control the timeline
+timeline.start();
+timeline.stop();
+timeline.reset();
+
+// Seek to specific time or progress
+timeline.seek(3.5);  // Seek to 3.5 seconds
+timeline.seekToProgress(0.5);  // Seek to 50%
+
+// Update in game loop
+function update(dt) {
+  timeline.update(dt);
+
+  // Get current values from active tracks
+  const current = timeline.current;
+  // current = { fadeIn: 50, move: { x: 50, y: 50 }, ... }
+}
+```
+
+Timeline options:
+
+- `mode?: AnimationTimelineMode` - `Auto` (starts immediately), `Trigger` (manual start), or `Manual` (controlled by progress/time)
+- `durationMode?: 'absolute' | 'relative'` - How track times are interpreted
+  - `'absolute'`: Track times are in seconds
+  - `'relative'`: Track times are normalized 0-1 values, scaled to timeline duration
+- `duration?: number` - Total timeline duration (required for relative mode)
+- Callbacks: `onFinished`, `onTrackStart`, `onTrackEnd`, `onMarkerReached`
+
+Public properties:
+
+- `globalTime: number` - Current time in seconds
+- `duration: number` - Total duration of the timeline
+- `progress: number` - Normalized progress (0-1), can be set for scrubbing
+- `running: boolean` - Whether timeline is playing
+- `finished: boolean` - Whether timeline has finished
+- `current: object` - Object containing current values from all labeled tracks
+
+See `./demos/timeline-animation.html` for interactive examples.
+
 ## Animation options
 
 ```ts
